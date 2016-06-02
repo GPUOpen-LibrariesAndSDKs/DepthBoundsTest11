@@ -8,6 +8,7 @@
 [Dd]esktop_*/
 DepthBoundsTest11_Debug_*.*
 DepthBoundsTest11_Release_*.*
+bin/*.*
 
 # Visual Studo 2015 cache/options directory
 .vs/
