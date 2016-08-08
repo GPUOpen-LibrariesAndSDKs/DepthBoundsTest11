@@ -9,7 +9,7 @@ _AMD_VS_SUFFIX = "_" .. string.gsub(_ACTION, "vs", "")
 _AMD_SAMPLE_DIR_LAYOUT  = "Desktop%{_AMD_VS_SUFFIX}/%{cfg.platform}/%{cfg.buildcfg}"
 
 -- Specify WindowsTargetPlatformVersion here for VS2015
-_AMD_WIN_SDK_VERSION = "10.0.10240.0"
+_AMD_WIN_SDK_VERSION = "8.1"
 
 -- command lines for Visual Studio build events
 _AMD_COPY_WIN_8_0_SDK_REDIST_TO_BIN = "if not exist \"..\\bin\\d3dcompiler_46.dll\" if exist \"$(ProgramFiles)\\Windows Kits\\8.0\\Redist\\D3D\\x64\\d3dcompiler_46.dll\" xcopy \"$(ProgramFiles)\\Windows Kits\\8.0\\Redist\\D3D\\x64\\d3dcompiler_46.dll\" \"..\\bin\" /H /R /Y > nul"
