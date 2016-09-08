@@ -323,7 +323,7 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdL
     DXUTSetCallbackD3D11DeviceDestroyed( OnD3D11DestroyDevice );
     DXUTSetCallbackD3D11FrameRender( OnD3D11FrameRender );
 
-    agsInit( &g_pAGSContext, nullptr );
+    agsInit( &g_pAGSContext, nullptr, nullptr );
 
     InitApp();
     DXUTInit( true, true, NULL ); // Parse the command line, show msgboxes on error, no extra command line params
@@ -461,11 +461,11 @@ HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFA
 
     // Initialize AGS's driver extensions - these are dependent on the D3D11 device
     g_ExtensionsSupported = 0;
-    agsDriverExtensions_Init( g_pAGSContext, pd3dDevice, &g_ExtensionsSupported );
+    agsDriverExtensionsDX11_Init( g_pAGSContext, pd3dDevice, 7, &g_ExtensionsSupported );
 
 	// Disable the UI if the DBT extension couldn't be initialized
 	CDXUTCheckBox *cbPtr = g_HUD.m_GUI.GetCheckBox(IDC_DEPTHBOUNDS);
-	if ( g_ExtensionsSupported & AGS_EXTENSION_DEPTH_BOUNDS_TEST )
+	if ( g_ExtensionsSupported & AGS_DX11_EXTENSION_DEPTH_BOUNDS_TEST )
 	{
 		cbPtr->SetEnabled(true);
 		if (g_bDepthBoundsTest)
@@ -1166,7 +1166,7 @@ void ShadingPasses(ID3D11DeviceContext* pd3dContext)
 
 
     // Draw point lights
-	if (!g_bDepthBoundsTest || !(g_ExtensionsSupported & AGS_EXTENSION_DEPTH_BOUNDS_TEST ))
+	if (!g_bDepthBoundsTest || !(g_ExtensionsSupported & AGS_DX11_EXTENSION_DEPTH_BOUNDS_TEST ))
 	{
 		pd3dContext->DrawIndexed( 6*g_uNumberOfLights, 0, 0 );
 	}
@@ -1189,7 +1189,7 @@ void ShadingPasses(ID3D11DeviceContext* pd3dContext)
 		}
 		// disable the depth bounds test
 		if (g_bDepthBoundsTest)
-            agsDriverExtensions_SetDepthBounds( g_pAGSContext, false, 0.0f, 1.0f );
+            agsDriverExtensionsDX11_SetDepthBounds( g_pAGSContext, false, 0.0f, 1.0f );
 	}
 
 	pd3dContext->OMSetDepthStencilState( g_pLessEqualDSS, 0 );
@@ -1274,7 +1274,7 @@ void SetDepthBoundsFromLightRadius(UINT i, XMVECTOR *pViewVec, XMMATRIX *pViewPr
 	farBound = CLIP(farBound);
 
 	// set the depth bounds based on the near and far z of the light
-	agsDriverExtensions_SetDepthBounds( g_pAGSContext, true, nearBound, farBound );
+	agsDriverExtensionsDX11_SetDepthBounds( g_pAGSContext, true, nearBound, farBound );
 }
 
 	
@@ -1412,7 +1412,7 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 	g_HUD.OnDestroyDevice();
     TIMER_Destroy()
 
-    agsDriverExtensions_DeInit( g_pAGSContext );
+    agsDriverExtensionsDX11_DeInit( g_pAGSContext );
 	
 #ifdef MEM_DEBUG
 	ID3D11Debug *pd3dDebug;
