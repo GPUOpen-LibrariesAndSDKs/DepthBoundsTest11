@@ -19,8 +19,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
-#ifndef __AMD_AGS_H
-#define __AMD_AGS_H
+#ifndef AMD_AGS_H
+#define AMD_AGS_H
+
+#define AMD_AGS_VERSION_MAJOR 4
+#define AMD_AGS_VERSION_MINOR 0
+#define AMD_AGS_VERSION_PATCH 3
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,6 +48,9 @@ struct D3D11_SUBRESOURCE_DATA;
 struct tagRECT;
 typedef tagRECT D3D11_RECT;
 
+// Forward declaration of D3D12 types
+struct ID3D12Device;
+
 
 enum AGSReturnCode
 {
@@ -56,16 +63,38 @@ enum AGSReturnCode
     AGS_ADL_FAILURE,
 };
 
-enum AGSDriverExtension
+enum AGSDriverExtensionDX11
 {
-    AGS_EXTENSION_QUADLIST                = 1 << 0,
-    AGS_EXTENSION_SCREENRECTLIST          = 1 << 1,
-    AGS_EXTENSION_UAV_OVERLAP             = 1 << 2,
-    AGS_EXTENSION_DEPTH_BOUNDS_TEST       = 1 << 3,
-    AGS_EXTENSION_MULTIDRAWINDIRECT       = 1 << 4,
-    AGS_EXTENSION_CROSSFIRE_API           = 1 << 5,
-    AGS_EXTENSION_APP_REGISTRATION        = 1 << 6
+    AGS_DX11_EXTENSION_QUADLIST = 1 << 0,
+    AGS_DX11_EXTENSION_SCREENRECTLIST = 1 << 1,
+    AGS_DX11_EXTENSION_UAV_OVERLAP = 1 << 2,
+    AGS_DX11_EXTENSION_DEPTH_BOUNDS_TEST = 1 << 3,
+    AGS_DX11_EXTENSION_MULTIDRAWINDIRECT = 1 << 4,
+    AGS_DX11_EXTENSION_MULTIDRAWINDIRECT_COUNTINDIRECT = 1 << 5,
+    AGS_DX11_EXTENSION_CROSSFIRE_API = 1 << 6,
+    AGS_DX11_EXTENSION_INTRINSIC_READFIRSTLANE = 1 << 7,
+    AGS_DX11_EXTENSION_INTRINSIC_READLANE = 1 << 8,
+    AGS_DX11_EXTENSION_INTRINSIC_LANEID = 1 << 9,
+    AGS_DX11_EXTENSION_INTRINSIC_SWIZZLE = 1 << 10,
+    AGS_DX11_EXTENSION_INTRINSIC_BALLOT = 1 << 11,
+    AGS_DX11_EXTENSION_INTRINSIC_MBCOUNT = 1 << 12,
+    AGS_DX11_EXTENSION_INTRINSIC_COMPARE3 = 1 << 13,
+    AGS_DX11_EXTENSION_INTRINSIC_BARYCENTRICS = 1 << 14
 };
+
+enum AGSDriverExtensionDX12
+{
+    AGS_DX12_EXTENSION_INTRINSIC_READFIRSTLANE = 1 << 0,
+    AGS_DX12_EXTENSION_INTRINSIC_READLANE = 1 << 1,
+    AGS_DX12_EXTENSION_INTRINSIC_LANEID = 1 << 2,
+    AGS_DX12_EXTENSION_INTRINSIC_SWIZZLE = 1 << 3,
+    AGS_DX12_EXTENSION_INTRINSIC_BALLOT = 1 << 4,
+    AGS_DX12_EXTENSION_INTRINSIC_MBCOUNT = 1 << 5,
+    AGS_DX12_EXTENSION_INTRINSIC_COMPARE3 = 1 << 6,
+    AGS_DX12_EXTENSION_INTRINSIC_BARYCENTRICS = 1 << 7
+};
+
+const unsigned int AGS_DX12_SHADER_INSTRINSICS_SPACE_ID = 0x7FFF0ADE; // 2147420894
 
 enum AGSPrimitiveTopology
 {
@@ -75,8 +104,9 @@ enum AGSPrimitiveTopology
 
 enum AGSCrossfireMode
 {
-    AGS_CROSSFIRE_MODE_DRIVER_AFR,      // Use the default driver-based AFR rendering
-    AGS_CROSSFIRE_MODE_EXPLICIT_AFR     // Use the AGS Crossfire API functions to perform explicit AFR rendering
+    AGS_CROSSFIRE_MODE_DRIVER_AFR = 0,  // Use the default driver-based AFR rendering
+    AGS_CROSSFIRE_MODE_EXPLICIT_AFR,    // Use the AGS Crossfire API functions to perform explicit AFR rendering
+    AGS_CROSSFIRE_MODE_DISABLE          // Completely disable AFR rendering
 };
 
 enum AGSAfrTransferType
@@ -87,9 +117,6 @@ enum AGSAfrTransferType
     AGS_AFR_TRANSFER_2STEP_NO_BROADCAST     = 3, // app controlled GPU to next GPU transfer using intermediate system memory
     AGS_AFR_TRANSFER_2STEP_WITH_BROADCAST   = 4, // app controlled GPU to all render GPUs transfer using intermediate system memory
 };
-
-#define AGS_MAKE_VERSION( major, minor, patch ) ( (major << 22) | (minor << 12) | patch )
-#define AGS_UNSPECIFIED_VERSION 0xFFFFAD00
 
 struct AGSContext;  // All function calls in AGS require a pointer to a context. This is generated via agsInit
 
@@ -137,7 +164,7 @@ struct AGSDisplayInfo
                                     // area associated with this display. If bezel compensation is enabled, this
                                     // area will be larger than what the display can natively present to account
                                     // for bezel area. If bezel compensation is disabled, this area will be equal
-                                    // to what the display can support natively. 
+                                    // to what the display can support natively.
 
     AGSRect displayRectVisible;     // Contains the base offset and dimensions in pixels of the SLS rendering area
                                     // associated with this display that is visible to the end user. If bezel
@@ -157,6 +184,11 @@ struct AGSDisplayInfo
                                     // defined by this rect.
 };
 
+struct AGSConfiguration
+{
+    AGSCrossfireMode        crossfireMode;                  // Desired Crossfire mode. See AGSCrossfireMode for more details
+};
+
 struct AGSGPUInfo
 {
     enum ArchitectureVersion
@@ -166,13 +198,17 @@ struct AGSGPUInfo
         ArchitectureVersion_GCN
     };
 
-    ArchitectureVersion     version;                        // Set to Unknown if not AMD hardware
+    int                     agsVersionMajor;                // Major field of Major.Minor.Patch AGS version number
+    int                     agsVersionMinor;                // Minor field of Major.Minor.Patch AGS version number
+    int                     agsVersionPatch;                // Patch field of Major.Minor.Patch AGS version number
+
+    ArchitectureVersion     architectureVersion;            // Set to Unknown if not AMD hardware
     const char*             adapterString;                  // The adapter name string. NULL if not AMD hardware
     int                     deviceId;                       // The device id
     int                     revisionId;                     // The revision id
 
     const char*             driverVersion;                  // The driver package version
-    const char*             radeonSoftwareVersion;          // The Radeon Software version
+    const char*             radeonSoftwareVersion;          // The Radeon Software Version
 
     int                     iNumCUs;                        // Number of GCN compute units. Zero if not GCN
     int                     iCoreClock;                     // core clock speed at 100% power in MHz
@@ -180,16 +216,17 @@ struct AGSGPUInfo
     float                   fTFlops;                        // Teraflops of GPU. Zero if not GCN. Calculated from iCoreClock * iNumCUs * 64 Pixels/clk * 2 instructions/MAD
 };
 
-
 // Description
 //   Function used to initialize the AGS library.
 //   Must be called prior to any of the subsequent AGS API calls.
+//   Must be called prior to ID3D11Device or ID3D12Device creation.
 //
 // Input params
 //   context - Address of a pointer to a context. This function allocates a context on the heap which is then required for all subsequent API calls.
-//   info    - Optional pointer to a AGSGPUInfo struct which will get filled in for the primary adapter.
+//   config  - Optional pointer to a AGSConfiguration struct to override the default library configuration.
+//   gpuInfo - Optional pointer to a AGSGPUInfo struct which will get filled in for the primary adapter.
 //
-AMD_AGS_API AGSReturnCode agsInit( AGSContext** context, AGSGPUInfo* info );
+AMD_AGS_API AGSReturnCode agsInit( AGSContext** context, const AGSConfiguration* config, AGSGPUInfo* gpuInfo );
 
 // Description
 //   Function used to clean up the AGS library.
@@ -209,7 +246,7 @@ AMD_AGS_API AGSReturnCode agsDeInit( AGSContext* context );
 //   context - Pointer to a context.
 //
 // Output params
-// 	 numGPUs - Number of GPUs used for Crossfire acceleration
+//   numGPUs - Number of GPUs used for Crossfire acceleration
 //
 AMD_AGS_API AGSReturnCode agsGetCrossfireGPUCount( AGSContext* context, int* numGPUs );
 
@@ -269,15 +306,37 @@ AMD_AGS_API AGSReturnCode agsGetGPUMemorySize( AGSContext* context, int gpuIndex
 //
 AMD_AGS_API AGSReturnCode agsGetEyefinityConfigInfo( AGSContext* context, int displayIndex, AGSEyefinityInfo* eyefinityInfo, int* numDisplaysInfo, AGSDisplayInfo* displaysInfo );
 
+
+// Description
+//   Function used to initialize the AMD-specific driver extensions for D3D12
+//
+// Input params
+//   context -             Pointer to a context. This is generated by agsInit()
+//   device -              The D3D12 device.
+//   extensionsSupported - Pointer to a bit mask that this function will fill in to indicate which extensions are supported.
+//
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX12_Init( AGSContext* context, ID3D12Device* device, unsigned int* extensionsSupported );
+
+// Description
+//   Function used to cleanup any AMD-specific driver extensions for D3D12
+//
+// Input params
+//   context -             Pointer to a context.
+//
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX12_DeInit( AGSContext* context );
+
+
 // Description
 //   Function used to initialize the AMD-specific driver extensions for D3D11
 //
 // Input params
 //   context -             Pointer to a context. This is generated by agsInit()
 //   device -              The D3D11 device.
+//   uavSlot -             The UAV slot reserved for intrinsic support. This must match the slot defined in the HLSL, ie #define AmdDxExtShaderIntrinsicsUAVSlot.
+//                         The default slot is 7, but the caller is free to use an alternative slot.
 //   extensionsSupported - Pointer to a bit mask that this function will fill in to indicate which extensions are supported.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_Init( AGSContext* context, ID3D11Device* device, unsigned int* extensionsSupported );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_Init( AGSContext* context, ID3D11Device* device, unsigned int uavSlot, unsigned int* extensionsSupported );
 
 // Description
 //   Function used to cleanup any AMD-specific driver extensions for D3D11
@@ -285,7 +344,7 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_Init( AGSContext* context, ID3D11D
 // Input params
 //   context -             Pointer to a context.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_DeInit( AGSContext* context );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_DeInit( AGSContext* context );
 
 // Description
 //   Function used to set the primitive topology. If you are using any of the extended topology types, then this function should
@@ -297,7 +356,7 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_DeInit( AGSContext* context );
 //                         or a standard D3D-defined topology such as D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP.
 //                         NB. the AGS-defined types will require casting to a D3D_PRIMITIVE_TOPOLOGY type.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_IASetPrimitiveTopology( AGSContext* context, enum D3D_PRIMITIVE_TOPOLOGY topology );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_IASetPrimitiveTopology( AGSContext* context, enum D3D_PRIMITIVE_TOPOLOGY topology );
 
 // Description
 //   Function used indicate to the driver it can overlap the subsequent batch of back-to-back dispatches
@@ -305,7 +364,7 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_IASetPrimitiveTopology( AGSContext
 // Input params
 //   context -             Pointer to a context.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_BeginUAVOverlap( AGSContext* context );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_BeginUAVOverlap( AGSContext* context );
 
 // Description
 //   Function used indicate to the driver it can no longer overlap the batch of back-to-back dispatches that has been submitted
@@ -313,7 +372,7 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_BeginUAVOverlap( AGSContext* conte
 // Input params
 //   context -             Pointer to a context.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_EndUAVOverlap( AGSContext* context );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_EndUAVOverlap( AGSContext* context );
 
 // Description
 //   Function used to set the depth bounds test extension
@@ -324,48 +383,57 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_EndUAVOverlap( AGSContext* context
 //   minDepth - The near depth range to clip against.
 //   maxDepth - The far depth range to clip against.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_SetDepthBounds( AGSContext* context, bool enabled, float minDepth, float maxDepth );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_SetDepthBounds( AGSContext* context, bool enabled, float minDepth, float maxDepth );
 
 // Description
 //   Function used to submit a batch of draws via MultiDrawIndirect
 //
 // Input params
-//   context -             Pointer to a context.
+//   context -                      Pointer to a context.
+//   drawCount -                    The number of draws.
+//   pBufferForArgs -               The args buffer.
+//   alignedByteOffsetForArgs -     The offset into the args buffer.
+//   byteStrideForArgs -            The per element stride of the args buffer.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_MultiDrawInstancedIndirect( AGSContext* context, unsigned int drawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_MultiDrawInstancedIndirect( AGSContext* context, unsigned int drawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
 
 // Description
 //   Function used to submit a batch of draws via MultiDrawIndirect
 //
 // Input params
-//   context -             Pointer to a context.
+//   context -                      Pointer to a context.
+//   drawCount -                    The number of draws.
+//   pBufferForArgs -               The args buffer.
+//   alignedByteOffsetForArgs -     The offset into the args buffer.
+//   byteStrideForArgs -            The per element stride of the args buffer.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_MultiDrawIndexedInstancedIndirect( AGSContext* context, unsigned int drawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_MultiDrawIndexedInstancedIndirect( AGSContext* context, unsigned int drawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
 
 // Description
-//   Function to register the app with the DX11 driver
+//   Function used to submit a batch of draws via MultiDrawIndirect
 //
 // Input params
-//   context -             Pointer to a context.
-//   engineName -          Optional engine name.
-//   engineVersion -       Engine version.
-//   appName -             Optional app name.
-//   appVersion -          App version.
+//   context -                          Pointer to a context.
+//   pBufferForDrawCount -              The draw count buffer.
+//   alignedByteOffsetForDrawCount -    The offset into the draw count buffer.
+//   pBufferForArgs -                   The args buffer.
+//   alignedByteOffsetForArgs -         The offset into the args buffer.
+//   byteStrideForArgs -                The per element stride of the args buffer.
 //
-// Remarks
-//   Use AGS_MAKE_VERSION for specific versioning, otherwise use AGS_UNSPECIFIED_VERSION.
-//   While both engineName and appName are optional, at least one must be specified.
-//
-AMD_AGS_API AGSReturnCode agsDriverExtensions_RegisterApp( AGSContext* context, const char* engineName, unsigned int engineVersion, const char* appName, unsigned int appVersion );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_MultiDrawInstancedIndirectCountIndirect( AGSContext* context, ID3D11Buffer* pBufferForDrawCount, unsigned int alignedByteOffsetForDrawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
 
 // Description
-//   Function to inform the driver how the app wants to behave in Crossfire mode. See AGSCrossfireMode for more details.
+//   Function used to submit a batch of draws via MultiDrawIndirect
 //
 // Input params
-//   context -             Pointer to a context.
-//   mode -                The AFR mode to use.
+//   context -                          Pointer to a context.
+//   pBufferForDrawCount -              The draw count buffer.
+//   alignedByteOffsetForDrawCount -    The offset into the draw count buffer.
+//   pBufferForArgs -                   The args buffer.
+//   alignedByteOffsetForArgs -         The offset into the args buffer.
+//   byteStrideForArgs -                The per element stride of the args buffer.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_SetCrossfireMode( AGSContext* context, AGSCrossfireMode mode );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_MultiDrawIndexedInstancedIndirectCountIndirect( AGSContext* context, ID3D11Buffer* pBufferForDrawCount, unsigned int alignedByteOffsetForDrawCount, ID3D11Buffer* pBufferForArgs, unsigned int alignedByteOffsetForArgs, unsigned int byteStrideForArgs );
 
 // Description
 //   Functions to create a Direct3D11 resource with the specified AFR transfer type
@@ -379,10 +447,10 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_SetCrossfireMode( AGSContext* cont
 // Output params
 //   buffer/texture -      Returned pointer to the resource.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_CreateBuffer( AGSContext* context, const D3D11_BUFFER_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Buffer** buffer, AGSAfrTransferType transferType );
-AMD_AGS_API AGSReturnCode agsDriverExtensions_CreateTexture1D( AGSContext* context, const D3D11_TEXTURE1D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture1D** texture1D, AGSAfrTransferType transferType );
-AMD_AGS_API AGSReturnCode agsDriverExtensions_CreateTexture2D( AGSContext* context, const D3D11_TEXTURE2D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture2D** texture2D, AGSAfrTransferType transferType );
-AMD_AGS_API AGSReturnCode agsDriverExtensions_CreateTexture3D( AGSContext* context, const D3D11_TEXTURE3D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture3D** texture3D, AGSAfrTransferType transferType );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_CreateBuffer( AGSContext* context, const D3D11_BUFFER_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Buffer** buffer, AGSAfrTransferType transferType );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_CreateTexture1D( AGSContext* context, const D3D11_TEXTURE1D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture1D** texture1D, AGSAfrTransferType transferType );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_CreateTexture2D( AGSContext* context, const D3D11_TEXTURE2D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture2D** texture2D, AGSAfrTransferType transferType );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_CreateTexture3D( AGSContext* context, const D3D11_TEXTURE3D_DESC* desc, const D3D11_SUBRESOURCE_DATA* initialData, ID3D11Texture3D** texture3D, AGSAfrTransferType transferType );
 
 // Description
 //   Functions to notify the driver that we have finished writing to the resource this frame.
@@ -396,7 +464,7 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_CreateTexture3D( AGSContext* conte
 //   subresourceArray -    An array of subresource indices (can be null to specify all subresources).
 //   numSubresources -     The number of subresources in subresourceArray OR number of transferRegions. Use 0 to specify ALL subresources and one transferRegion (which may be null if specifying the whole area).
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_NotifyResourceEndWrites( AGSContext* context, ID3D11Resource* resource, const D3D11_RECT* transferRegions, const unsigned int* subresourceArray, unsigned int numSubresources );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_NotifyResourceEndWrites( AGSContext* context, ID3D11Resource* resource, const D3D11_RECT* transferRegions, const unsigned int* subresourceArray, unsigned int numSubresources );
 
 // Description
 //   This will notify the driver that the app will begin read/write access to the resource.
@@ -405,23 +473,22 @@ AMD_AGS_API AGSReturnCode agsDriverExtensions_NotifyResourceEndWrites( AGSContex
 //   context -             Pointer to a context.
 //   resource -            Pointer to the resource.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_NotifyResourceBeginAllAccess( AGSContext* context, ID3D11Resource* resource );
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_NotifyResourceBeginAllAccess( AGSContext* context, ID3D11Resource* resource );
 
 // Description
 //   This is used for AGS_AFR_TRANSFER_1STEP_P2P to notify when it is safe to initiate a transfer.
 //   This call in frame N-(NumGpus-1) allows a 1 step P2P in frame N to start.
-//   This should be called after agsDriverExtensions_NotifyResourceEndWrites.
+//   This should be called after agsDriverExtensionsDX11_NotifyResourceEndWrites.
 //
 // Input params
 //   context -             Pointer to a context.
 //   resource -            Pointer to the resource.
 //
-AMD_AGS_API AGSReturnCode agsDriverExtensions_NotifyResourceEndAllAccess( AGSContext* context, ID3D11Resource* resource );
-
+AMD_AGS_API AGSReturnCode agsDriverExtensionsDX11_NotifyResourceEndAllAccess( AGSContext* context, ID3D11Resource* resource );
 
 
 #ifdef __cplusplus
-}; // extern C
+} // extern "C"
 #endif
 
-#endif // __AMD_AGS_H
+#endif // AMD_AGS_H
